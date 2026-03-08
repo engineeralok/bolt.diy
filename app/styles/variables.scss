@@ -1,6 +1,6 @@
 /* Color Tokens Light Theme */
 :root,
-:root[data-theme='light'] {
+[data-theme='light'] {
   --bolt-elements-borderColor: theme('colors.alpha.gray.10');
   --bolt-elements-borderColorActive: theme('colors.accent.600');
 
@@ -107,8 +107,7 @@
 }
 
 /* Color Tokens Dark Theme */
-:root,
-:root[data-theme='dark'] {
+[data-theme='dark'] {
   --bolt-elements-borderColor: theme('colors.alpha.white.10');
   --bolt-elements-borderColorActive: theme('colors.accent.500');
 

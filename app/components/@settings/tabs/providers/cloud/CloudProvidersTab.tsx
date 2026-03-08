@@ -8,7 +8,7 @@ import { motion } from 'framer-motion';
 import { classNames } from '~/utils/classNames';
 import { toast } from 'react-toastify';
 import { providerBaseUrlEnvKeys } from '~/utils/constants';
-import { SiAmazon, SiGoogle, SiGithub, SiHuggingface, SiPerplexity, SiOpenai } from 'react-icons/si';
+import { SiAmazon, SiGoogle, SiGithub, SiHuggingface, SiPerplexity, SiOpenai, SiAlibabacloud } from 'react-icons/si';
 import { BsRobot, BsCloud } from 'react-icons/bs';
 import { TbBrain, TbCloudComputing } from 'react-icons/tb';
 import { BiCodeBlock, BiChip } from 'react-icons/bi';
@@ -31,12 +31,14 @@ type ProviderName =
   | 'OpenRouter'
   | 'Perplexity'
   | 'Together'
-  | 'XAI';
+  | 'XAI'
+  | 'Bailian';
 
 // Update the PROVIDER_ICONS type to use the ProviderName type
 const PROVIDER_ICONS: Record<ProviderName, IconType> = {
   AmazonBedrock: SiAmazon,
   Anthropic: FaBrain,
+  Bailian: SiAlibabacloud,
   Cohere: BiChip,
   Deepseek: BiCodeBlock,
   Github: SiGithub,
@@ -57,6 +59,7 @@ const PROVIDER_DESCRIPTIONS: Partial<Record<ProviderName, string>> = {
   Anthropic: 'Access Claude and other Anthropic models',
   Github: 'Use OpenAI models hosted through GitHub infrastructure',
   OpenAI: 'Use GPT-4, GPT-3.5, and other OpenAI models',
+  Bailian: 'Access Alibaba Cloud DashScope models',
 };
 
 const CloudProvidersTab = () => {
