@@ -528,7 +528,7 @@ export class WorkbenchStore {
     this.addToExecutionQueue(() => this._addAction(data));
   }
   async _addAction(data: ActionCallbackData) {
-    const { artifactId } = data;
+    const { artifactId, messageId, action } = data;
 
     const artifact = this.#getArtifact(artifactId);
 
@@ -536,7 +536,13 @@ export class WorkbenchStore {
       unreachable('Artifact not found');
     }
 
-    return artifact.runner.addAction(data);
+    const isReloaded = this.#reloadedMessages.has(messageId);
+    const isShellAction = action.type === 'shell' || action.type === 'start';
+
+    // We skip replaying shell/start actions on reload to avoid interrupting the terminal
+    const executed = isReloaded && isShellAction;
+
+    return artifact.runner.addAction(data, executed);
   }
 
   runAction(data: ActionCallbackData, isStreaming: boolean = false) {

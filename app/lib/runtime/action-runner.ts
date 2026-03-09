@@ -88,7 +88,7 @@ export class ActionRunner {
     this.onDeployAlert = onDeployAlert;
   }
 
-  addAction(data: ActionCallbackData) {
+  addAction(data: ActionCallbackData, executed: boolean = false) {
     const { actionId } = data;
 
     const actions = this.actions.get();
@@ -103,8 +103,8 @@ export class ActionRunner {
 
     this.actions.setKey(actionId, {
       ...data.action,
-      status: 'pending',
-      executed: false,
+      status: executed ? 'complete' : 'pending',
+      executed,
       abort: () => {
         abortController.abort();
         this.#updateAction(actionId, { status: 'aborted' });
@@ -112,9 +112,11 @@ export class ActionRunner {
       abortSignal: abortController.signal,
     });
 
-    this.#currentExecutionPromise.then(() => {
-      this.#updateAction(actionId, { status: 'running' });
-    });
+    if (!executed) {
+      this.#currentExecutionPromise.then(() => {
+        this.#updateAction(actionId, { status: 'running' });
+      });
+    }
   }
 
   async runAction(data: ActionCallbackData, isStreaming: boolean = false) {
@@ -150,6 +152,12 @@ export class ActionRunner {
 
   async #executeAction(actionId: string, isStreaming: boolean = false) {
     const action = this.actions.get()[actionId];
+
+    if (import.meta.env.DEV) {
+      console.log(
+        `[ActionRunner] Executing action: ${actionId}, type: ${action.type}, content: "${action.content?.slice(0, 50)}..."`,
+      );
+    }
 
     this.#updateAction(actionId, { status: 'running' });
 

@@ -160,24 +160,30 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
 
           // Select context files
           console.log(`Messages count: ${processedMessages.length}`);
-          filteredFiles = await selectContext({
-            messages: [...processedMessages],
-            env: context.cloudflare?.env,
-            apiKeys,
-            files,
-            providerSettings,
-            promptId,
-            contextOptimization,
-            summary,
-            onFinish(resp) {
-              if (resp.usage) {
-                logger.debug('selectContext token usage', JSON.stringify(resp.usage));
-                cumulativeUsage.completionTokens += resp.usage.completionTokens || 0;
-                cumulativeUsage.promptTokens += resp.usage.promptTokens || 0;
-                cumulativeUsage.totalTokens += resp.usage.totalTokens || 0;
-              }
-            },
-          });
+
+          try {
+            filteredFiles = await selectContext({
+              messages: [...processedMessages],
+              env: context.cloudflare?.env,
+              apiKeys,
+              files,
+              providerSettings,
+              promptId,
+              contextOptimization,
+              summary,
+              onFinish(resp) {
+                if (resp.usage) {
+                  logger.debug('selectContext token usage', JSON.stringify(resp.usage));
+                  cumulativeUsage.completionTokens += resp.usage.completionTokens || 0;
+                  cumulativeUsage.promptTokens += resp.usage.promptTokens || 0;
+                  cumulativeUsage.totalTokens += resp.usage.totalTokens || 0;
+                }
+              },
+            });
+          } catch (selectError: any) {
+            logger.warn(`Context selection failed: ${selectError.message}. Proceeding without filtered context.`);
+            filteredFiles = undefined;
+          }
 
           if (filteredFiles) {
             logger.debug(`files in context : ${JSON.stringify(Object.keys(filteredFiles))}`);
@@ -185,15 +191,17 @@ async function chatAction({ context, request }: ActionFunctionArgs) {
 
           dataStream.writeMessageAnnotation({
             type: 'codeContext',
-            files: Object.keys(filteredFiles).map((key) => {
-              let path = key;
+            files: filteredFiles
+              ? Object.keys(filteredFiles).map((key) => {
+                  let path = key;
 
-              if (path.startsWith(WORK_DIR)) {
-                path = path.replace(WORK_DIR, '');
-              }
+                  if (path.startsWith(WORK_DIR)) {
+                    path = path.replace(WORK_DIR, '');
+                  }
 
-              return path;
-            }),
+                  return path;
+                })
+              : [],
           } as ContextAnnotation);
 
           dataStream.writeData({

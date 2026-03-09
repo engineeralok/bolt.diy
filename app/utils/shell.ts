@@ -27,11 +27,17 @@ export async function newShellProcess(webcontainer: WebContainer, terminal: ITer
         if (!isInteractive) {
           const [, osc] = data.match(/\x1b\]654;([^\x07]+)\x07/) || [];
 
-          if (osc === 'interactive') {
-            // wait until we see the interactive OSC
-            isInteractive = true;
+          if (osc === 'interactive' || osc === 'prompt' || osc === 'exit') {
+            // wait until we see any of these signals
+            if (!isInteractive) {
+              isInteractive = true;
 
-            jshReady.resolve();
+              if (import.meta.env.DEV) {
+                console.log(`[Terminal] Shell reached INTERACTIVE state via OSC:${osc}`);
+              }
+
+              jshReady.resolve();
+            }
           }
         }
 
@@ -58,8 +64,23 @@ export async function newShellProcess(webcontainer: WebContainer, terminal: ITer
     }),
   );
 
+  // Fallback: force interactive if we don't see the OSC within a timeout
+  const interactiveTimeout = setTimeout(() => {
+    if (!isInteractive) {
+      isInteractive = true;
+
+      if (import.meta.env.DEV) {
+        console.warn('[Terminal] Shell interactive state reached via TIMEOUT fallback');
+      }
+
+      jshReady.resolve();
+    }
+  }, 5000);
+
   terminal.onData((data) => {
-    // console.log('terminal onData', { data, isInteractive });
+    if (import.meta.env.DEV) {
+      console.log(`[Terminal] data received (len=${data.length}), isInteractive=${isInteractive}`);
+    }
 
     if (isInteractive) {
       input.write(data);
@@ -85,6 +106,7 @@ export async function newShellProcess(webcontainer: WebContainer, terminal: ITer
   });
 
   await jshReady.promise;
+  clearTimeout(interactiveTimeout);
 
   return process;
 }
@@ -100,6 +122,8 @@ export class BoltShell {
   executionState = atom<
     { sessionId: string; active: boolean; executionPrms?: Promise<any>; abort?: () => void } | undefined
   >();
+
+  #isAtPrompt = false;
   #outputStream: ReadableStreamDefaultReader<string> | undefined;
   #shellInputStream: WritableStreamDefaultWriter<string> | undefined;
 
@@ -153,9 +177,16 @@ export class BoltShell {
           if (!isInteractive) {
             const [, osc] = data.match(/\x1b\]654;([^\x07]+)\x07/) || [];
 
-            if (osc === 'interactive') {
-              isInteractive = true;
-              jshReady.resolve();
+            if (osc === 'interactive' || osc === 'prompt' || osc === 'exit') {
+              if (!isInteractive) {
+                isInteractive = true;
+
+                if (import.meta.env.DEV) {
+                  console.log(`[BoltShell] Shell reached INTERACTIVE state via OSC:${osc}`);
+                }
+
+                jshReady.resolve();
+              }
             }
           }
 
@@ -164,13 +195,30 @@ export class BoltShell {
       }),
     );
 
+    const interactiveTimeout = setTimeout(() => {
+      if (!isInteractive) {
+        isInteractive = true;
+
+        if (import.meta.env.DEV) {
+          console.warn('[BoltShell] Shell interactive state reached via TIMEOUT fallback');
+        }
+
+        jshReady.resolve();
+      }
+    }, 5000);
+
     terminal.onData((data) => {
+      if (import.meta.env.DEV) {
+        console.log(`[BoltShell] data received (len=${data.length}), isInteractive=${isInteractive}`);
+      }
+
       if (isInteractive) {
         input.write(data);
       }
     });
 
     await jshReady.promise;
+    clearTimeout(interactiveTimeout);
 
     // Return all streams for use in init
     return { process, terminalStream: streamA, commandStream: streamC, expoUrlStream: streamD };
@@ -226,12 +274,28 @@ export class BoltShell {
       state.abort();
     }
 
-    /*
-     * interrupt the current execution
-     *  this.#shellInputStream?.write('\x03');
-     */
-    this.terminal.input('\x03');
+    if (import.meta.env.DEV) {
+      console.log(
+        `[BoltShell] executeCommand called for session: ${sessionId}, command: "${command}", isAtPrompt: ${this.#isAtPrompt}`,
+      );
+    }
+
+    // Only send ^C if we are NOT at a prompt
+    if (!this.#isAtPrompt) {
+      if (import.meta.env.DEV) {
+        console.log('[BoltShell] Terminal not at prompt, sending ^C');
+      }
+
+      this.terminal.input('\x03');
+    } else {
+      if (import.meta.env.DEV) {
+        console.log('[BoltShell] Terminal already at prompt, skipping ^C');
+      }
+    }
+
     await this.waitTillOscCode('prompt');
+
+    this.#isAtPrompt = false;
 
     if (state && state.executionPrms) {
       await state.executionPrms;
@@ -279,7 +343,29 @@ export class BoltShell {
     // Regex for Expo URL
     const expoUrlRegex = /(exp:\/\/[^\s]+)/;
 
+    /*
+     * Only use a timeout for 'prompt' waits (initial shell readiness).
+     * 'exit' waits must NOT time out since commands like npm install can take minutes.
+     */
+    const useTimeout = waitCode === 'prompt';
+    let timedOut = false;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+    if (useTimeout) {
+      timeoutId = setTimeout(() => {
+        timedOut = true;
+      }, 15000);
+    }
+
     while (true) {
+      if (timedOut) {
+        if (import.meta.env.DEV) {
+          console.warn(`[BoltShell] waitTillOscCode('${waitCode}') timed out after 15s`);
+        }
+
+        break;
+      }
+
       const { value, done } = await tappedStream.read();
 
       if (done) {
@@ -312,8 +398,13 @@ export class BoltShell {
       }
 
       if (osc === waitCode) {
+        this.#isAtPrompt = osc === 'prompt';
         break;
       }
+    }
+
+    if (timeoutId) {
+      clearTimeout(timeoutId);
     }
 
     return { output: fullOutput, exitCode };

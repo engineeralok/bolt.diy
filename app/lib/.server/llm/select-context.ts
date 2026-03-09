@@ -180,7 +180,30 @@ export async function selectContext(props: {
   const updateContextBuffer = response.match(/<updateContextBuffer>([\s\S]*?)<\/updateContextBuffer>/);
 
   if (!updateContextBuffer) {
-    throw new Error('Invalid response. Please follow the response format');
+    logger.warn('LLM response did not contain updateContextBuffer tag. Falling back to existing context.');
+
+    // Return existing context or all files
+    if (Object.keys(contextFiles).length > 0) {
+      if (onFinish) {
+        onFinish(resp);
+      }
+
+      return contextFiles;
+    }
+
+    // Fallback to first 5 files
+    const fallbackFiles: FileMap = {};
+
+    filePaths.slice(0, 5).forEach((path) => {
+      const relativePath = path.replace('/home/project/', '');
+      fallbackFiles[relativePath] = files[path];
+    });
+
+    if (onFinish) {
+      onFinish(resp);
+    }
+
+    return Object.keys(fallbackFiles).length > 0 ? fallbackFiles : files;
   }
 
   const includeFiles =
@@ -225,6 +248,27 @@ export async function selectContext(props: {
   logger.info(`Total files: ${totalFiles}`);
 
   if (totalFiles == 0) {
+    // If we have existing context files, return those instead of failing
+    if (Object.keys(contextFiles).length > 0) {
+      logger.warn('No new files selected, returning existing context files');
+      return contextFiles;
+    }
+
+    // Fallback: return all files (unfiltered) so the main LLM can still work
+    logger.warn('No files selected by context optimization, returning all available files');
+
+    const allFiles: FileMap = {};
+
+    filePaths.slice(0, 5).forEach((path) => {
+      const relativePath = path.replace('/home/project/', '');
+      allFiles[relativePath] = files[path];
+    });
+
+    if (Object.keys(allFiles).length > 0) {
+      return allFiles;
+    }
+
+    // Only throw if we truly have nothing
     throw new Error(`Bolt failed to select files`);
   }
 
